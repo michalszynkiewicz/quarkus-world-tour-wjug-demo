@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Todos</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.1/dist/css/bootstrap.min.css" rel="stylesheet"
+          integrity="sha384-+0n0xVW2eSR5OomGNYDnhzAbDsOXxcvSN1TPprVMTNDbiYZCxYbOOl7+AMvyTG2x" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.1/dist/js/bootstrap.bundle.min.js"
+            integrity="sha384-gtEjrD/SeCtmISkJkNUaaKMoLD0//ElJ19smozuHV6z3Iehds+3Ulb9Bn9Plx0x4"
+            crossorigin="anonymous"></script>
+    <style>
+        tr.todo-row-template {
+            display: none;
+        }
+
+        .title {
+            font-weight: bolder;
+        }
+
+        .state input {
+            width: 1.5em;
+            height: 1.5em;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Todos</h1>
+
+    <button type="button" class="btn btn-lg btn-primary mt-5 mb-5" data-bs-toggle="modal" data-bs-target="#newTodo">
+        Add a todo
+    </button>
+
+    <div class="modal fade" id="newTodo" tabindex="-1" aria-labelledby="newTodoModal" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="exampleModalLabel">Add a new todo</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cancel"></button>
+                </div>
+                <form id="newTodoForm">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="title" class="form-label">Title</label>
+                            <input type="text" class="form-control" id="title" placeholder="Short title">
+                        </div>
+                        <div class="mb-3">
+                            <label for="description" class="form-label">Description</label>
+                            <input type="text" class="form-control" id="description" placeholder="Describe your todo">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-primary" onclick="addTodo()">Add</button>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+
+    <table class="table table-striped">
+        <thead>
+        <tr>
+            <td class="col-1">Id</td>
+            <td class="col-3">Title</td>
+            <td class="col-7">Description</td>
+            <td class="col-1"></td>
+        </tr>
+        </thead>
+        <tbody>
+        <tr class="todo-row-template">
+            <td class="id"></td>
+            <td class="title text-wrap"></td>
+            <td class="description text-wrap"></td>
+            <td class="state">
+                <input type="checkbox">
+            </td>
+        </tr>
+        </tbody>
+    </table>
+
+</div>
+<script>
+
+    class Todo {
+        constructor(title, description, id, state) {
+            this.id = id;
+            this.title = title;
+            this.description = description;
+            this.todoState = state;
+        }
+
+        static compare(o1, o2) {
+            if (o1.todoState === 'DONE' && o2.todoState !== 'DONE') {
+                return 1;
+            }
+            if (o1.todoState !== 'DONE' && o2.todoState === 'DONE') {
+                return -1;
+            }
+            return o1.id - o2.id;
+        }
+    }
+
+    let todos = [];
+
+    const newTodoModal = new bootstrap.Modal(document.getElementById('newTodo'), {
+        keyboard: false
+    })
+
+    function addTodo() {
+        newTodoModal.disabled = true;
+
+        const todo = new Todo(document.getElementById('title').value, document.getElementById('description').value)
+        fetch('/todos', {
+            method: 'POST',
+            headers: {
+                'Content-type': 'application/json'
+            },
+            body: JSON.stringify(todo)
+        }).then(response => {
+            readTodos();
+            newTodoModal.hide();
+            document.getElementById('newTodoForm').reset();
+        });
+    }
+
+    function updateTodos(newTodos) {
+        const parent = document.querySelector('.todo-row-template').parentNode;
+
+        // both todos and newTodos should be sorted
+        let newPos = 0, oldPos = 0;
+        let elementIndex = 1; // template is at 0
+        while (true) {
+            if (newPos >= newTodos.length && oldPos >= todos.length) {
+                break;
+            }
+            if (oldPos >= todos.length) {
+                showTodo(newTodos[newPos]);
+                elementIndex++;
+                newPos++;
+            } else if (newPos >= newTodos.length) {
+                // no new elements but we still have old ones, remove them
+                const oldElement = parent.children[elementIndex];
+                parent.removeChild(oldElement);
+                oldPos++;
+            } else {
+                const updated = newTodos[newPos], old = todos[oldPos];
+                // we don't support updating title or description after an entry is added, so we can just do:
+                const cmp = Todo.compare(updated, old);
+                if (cmp === 0) {
+                    oldPos++;
+                    newPos++;
+                    elementIndex++;
+                } else if (cmp < 0) {
+                    showTodo(newTodos[newPos], elementIndex)
+                    elementIndex++;
+                    newPos++;
+                } else {
+                    // the new one should be after, the old one got (re)moved:
+                    const oldElement = parent.children[elementIndex];
+                    parent.removeChild(oldElement);
+                    oldPos++;
+                }
+            }
+        }
+        todos = newTodos;
+
+        for (; newPos < todos.length; newPos++) {
+            todos.pop();
+        }
+    }
+
+    function markDone(todo) {
+        const updated = Object.assign({}, todo)
+        updated.todoState = 'DONE';
+        console.log("putting", updated);
+        fetch(`/todos/${updated.id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-type': 'application/json'
+            },
+            body: JSON.stringify(updated)
+        }).then(response => {
+            readTodos();
+        }).catch(failure => {
+            console.log("failed dto mark todo as done", todo);
+            readTodos()
+        })
+    }
+
+    function showTodo(todo, position) {
+        const rowTemplate = document.querySelector(".todo-row-template");
+        const parent = rowTemplate.parentElement;
+
+        const newRow = rowTemplate.cloneNode(true)
+
+        newRow.querySelector('.id').innerHTML = todo.id;
+        newRow.querySelector('.title').innerHTML = todo.title;
+        newRow.querySelector('.description').innerHTML = todo.description;
+        const checkbox = newRow.querySelector('.state input');
+        checkbox.checked = todo.todoState === 'DONE';
+        if (!checkbox.checked) {
+            checkbox.onclick = () => markDone(todo);
+        } else {
+            checkbox.disabled = true;
+        }
+
+        newRow.classList.remove("todo-row-template");
+        newRow.classList.add("todo-row");
+
+        if (position && parent.children[position]) {
+            parent.insertBefore(newRow, parent.children[position]);
+        } else {
+            parent.appendChild(newRow);
+        }
+    }
+
+    function readTodos() {
+        fetch('/todos', {
+            headers: {
+                'Content-type': 'application/json'
+            }
+        }).then(
+            response => response.json().then(todoList => {
+                    todoList.sort(Todo.compare)
+                    updateTodos(todoList);
+                }
+            )
+        );
+    }
+
+
+    window.onload = () => {
+        readTodos();
+        setInterval(readTodos, 5000);
+    }
+</script>
+</body>
+</html>

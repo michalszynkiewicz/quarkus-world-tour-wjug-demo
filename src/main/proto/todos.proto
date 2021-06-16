@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package todos;
+
+option java_package = "com.example.todos";
+
+
+service Todos {
+  rpc Add(Todo) returns (Void);
+  rpc MarkDone(Todo) returns (Void);
+  rpc Watch(Void) returns (stream Todo);
+}
+
+message Void {
+
+}
+
+message Todo {
+  int64 id = 1;
+  string title = 2;
+  string description = 3;
+  State todoState = 4;
+}
+
+enum State {
+  NEW = 0;
+  DONE = 1;
+}
